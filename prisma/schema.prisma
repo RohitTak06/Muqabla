@@ -1,0 +1,373 @@
+// Muqabla Sports Management System - Prisma Schema
+// This schema defines the database structure for managing sports events, teams, players, and matches
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// User Management
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  username      String    @unique
+  password      String
+  firstName     String
+  lastName      String
+  phone         String?
+  role          UserRole  @default(USER)
+  avatar        String?
+  isActive      Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  
+  // Relations
+  organizedEvents Event[]   @relation("EventOrganizer")
+  teamMemberships TeamMember[]
+  playerProfile   Player?
+  refereeProfile  Referee?
+  scorecards      Scorecard[]
+  notifications   Notification[]
+  
+  @@index([email])
+  @@index([username])
+  @@map("users")
+}
+
+enum UserRole {
+  ADMIN
+  ORGANIZER
+  PLAYER
+  REFEREE
+  USER
+}
+
+// Sports Categories
+model Sport {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?  @db.Text
+  icon        String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  // Relations
+  events      Event[]
+  teams       Team[]
+  
+  @@map("sports")
+}
+
+// Event Management
+model Event {
+  id              String      @id @default(cuid())
+  name            String
+  description     String?     @db.Text
+  sportId         String
+  organizerId     String
+  venue           String
+  startDate       DateTime
+  endDate         DateTime
+  registrationDeadline DateTime
+  maxTeams        Int
+  minTeamsPerMatch Int        @default(2)
+  maxTeamsPerMatch Int        @default(2)
+  entryFee        Decimal     @default(0) @db.Decimal(10, 2)
+  prizePool       Decimal?    @db.Decimal(10, 2)
+  status          EventStatus @default(UPCOMING)
+  rules           String?     @db.Text
+  banner          String?
+  isPublic        Boolean     @default(true)
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+  
+  // Relations
+  sport           Sport       @relation(fields: [sportId], references: [id], onDelete: Cascade)
+  organizer       User        @relation("EventOrganizer", fields: [organizerId], references: [id])
+  registrations   Registration[]
+  matches         Match[]
+  standings       Standing[]
+  
+  @@index([sportId])
+  @@index([organizerId])
+  @@index([status])
+  @@index([startDate])
+  @@map("events")
+}
+
+enum EventStatus {
+  UPCOMING
+  REGISTRATION_OPEN
+  REGISTRATION_CLOSED
+  ONGOING
+  COMPLETED
+  CANCELLED
+}
+
+// Team Management
+model Team {
+  id          String   @id @default(cuid())
+  name        String
+  sportId     String
+  logo        String?
+  description String?  @db.Text
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  // Relations
+  sport         Sport     @relation(fields: [sportId], references: [id], onDelete: Cascade)
+  members       TeamMember[]
+  registrations Registration[]
+  homeMatches   Match[]   @relation("HomeTeam")
+  awayMatches   Match[]   @relation("AwayTeam")
+  standings     Standing[]
+  
+  @@index([sportId])
+  @@index([name])
+  @@map("teams")
+}
+
+// Team Members
+model TeamMember {
+  id          String   @id @default(cuid())
+  teamId      String
+  userId      String
+  role        TeamRole @default(PLAYER)
+  jerseyNumber Int?
+  position    String?
+  joinedAt    DateTime @default(now())
+  isActive    Boolean  @default(true)
+  
+  // Relations
+  team        Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@unique([teamId, userId])
+  @@index([teamId])
+  @@index([userId])
+  @@map("team_members")
+}
+
+enum TeamRole {
+  CAPTAIN
+  VICE_CAPTAIN
+  PLAYER
+  COACH
+  MANAGER
+}
+
+// Player Profile
+model Player {
+  id          String   @id @default(cuid())
+  userId      String   @unique
+  dateOfBirth DateTime?
+  height      Decimal? @db.Decimal(5, 2)
+  weight      Decimal? @db.Decimal(5, 2)
+  preferredPosition String?
+  bio         String?  @db.Text
+  achievements String? @db.Text
+  
+  // Relations
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  statistics  PlayerStatistic[]
+  
+  @@map("players")
+}
+
+// Player Statistics
+model PlayerStatistic {
+  id          String   @id @default(cuid())
+  playerId    String
+  matchId     String
+  goals       Int      @default(0)
+  assists     Int      @default(0)
+  yellowCards Int      @default(0)
+  redCards    Int      @default(0)
+  minutesPlayed Int    @default(0)
+  rating      Decimal? @db.Decimal(3, 2)
+  
+  // Relations
+  player      Player   @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  match       Match    @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  
+  @@unique([playerId, matchId])
+  @@index([playerId])
+  @@index([matchId])
+  @@map("player_statistics")
+}
+
+// Event Registration
+model Registration {
+  id          String            @id @default(cuid())
+  eventId     String
+  teamId      String
+  status      RegistrationStatus @default(PENDING)
+  paymentStatus PaymentStatus   @default(PENDING)
+  paymentAmount Decimal         @db.Decimal(10, 2)
+  registeredAt DateTime         @default(now())
+  approvedAt  DateTime?
+  
+  // Relations
+  event       Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  team        Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  
+  @@unique([eventId, teamId])
+  @@index([eventId])
+  @@index([teamId])
+  @@index([status])
+  @@map("registrations")
+}
+
+enum RegistrationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  REFUNDED
+  FAILED
+}
+
+// Match Management
+model Match {
+  id          String      @id @default(cuid())
+  eventId     String
+  homeTeamId  String
+  awayTeamId  String
+  refereeId   String?
+  venue       String
+  scheduledAt DateTime
+  startedAt   DateTime?
+  endedAt     DateTime?
+  status      MatchStatus @default(SCHEDULED)
+  homeScore   Int         @default(0)
+  awayScore   Int         @default(0)
+  round       String?
+  matchNumber Int?
+  notes       String?     @db.Text
+  
+  // Relations
+  event       Event       @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  homeTeam    Team        @relation("HomeTeam", fields: [homeTeamId], references: [id])
+  awayTeam    Team        @relation("AwayTeam", fields: [awayTeamId], references: [id])
+  referee     Referee?    @relation(fields: [refereeId], references: [id])
+  scorecards  Scorecard[]
+  statistics  PlayerStatistic[]
+  
+  @@index([eventId])
+  @@index([homeTeamId])
+  @@index([awayTeamId])
+  @@index([refereeId])
+  @@index([scheduledAt])
+  @@index([status])
+  @@map("matches")
+}
+
+enum MatchStatus {
+  SCHEDULED
+  LIVE
+  COMPLETED
+  POSTPONED
+  CANCELLED
+}
+
+// Referee Management
+model Referee {
+  id              String   @id @default(cuid())
+  userId          String   @unique
+  licenseNumber   String   @unique
+  experience      Int      @default(0)
+  specialization  String?
+  rating          Decimal? @db.Decimal(3, 2)
+  isAvailable     Boolean  @default(true)
+  
+  // Relations
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  matches         Match[]
+  
+  @@map("referees")
+}
+
+// Scorecard/Live Updates
+model Scorecard {
+  id          String   @id @default(cuid())
+  matchId     String
+  userId      String
+  eventType   String
+  description String
+  minute      Int?
+  timestamp   DateTime @default(now())
+  
+  // Relations
+  match       Match    @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  user        User     @relation(fields: [userId], references: [id])
+  
+  @@index([matchId])
+  @@index([userId])
+  @@map("scorecards")
+}
+
+// Standings/Leaderboard
+model Standing {
+  id          String   @id @default(cuid())
+  eventId     String
+  teamId      String
+  position    Int
+  played      Int      @default(0)
+  won         Int      @default(0)
+  drawn       Int      @default(0)
+  lost        Int      @default(0)
+  goalsFor    Int      @default(0)
+  goalsAgainst Int     @default(0)
+  goalDifference Int   @default(0)
+  points      Int      @default(0)
+  
+  // Relations
+  event       Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  team        Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  
+  @@unique([eventId, teamId])
+  @@index([eventId])
+  @@index([teamId])
+  @@map("standings")
+}
+
+// Notifications
+model Notification {
+  id          String   @id @default(cuid())
+  userId      String
+  title       String
+  message     String   @db.Text
+  type        NotificationType
+  isRead      Boolean  @default(false)
+  link        String?
+  createdAt   DateTime @default(now())
+  
+  // Relations
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([userId])
+  @@index([isRead])
+  @@map("notifications")
+}
+
+enum NotificationType {
+  EVENT_CREATED
+  REGISTRATION_APPROVED
+  REGISTRATION_REJECTED
+  MATCH_SCHEDULED
+  MATCH_STARTED
+  MATCH_COMPLETED
+  TEAM_INVITATION
+  GENERAL
+}
